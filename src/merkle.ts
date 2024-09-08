@@ -11,9 +11,25 @@ export function bufferToInt(b: Buffer): bigint {
 export function hashToInt(b: Buffer): bigint {
     return bufferToInt(hash(b));
 }
+export function generateLeafHashKeys(seed: number, count: bigint): bigint[] {
+    const keys: bigint[] = [];
+    const seedBuffer = Buffer.from(seed.toString());
+
+    for (let i = 0n; i < count; i++) {
+        const keyBuffer = Buffer.concat([seedBuffer, Buffer.from(i.toString())]);
+        const hashedKey = hashToInt(keyBuffer);
+        const truncatedKey = hashedKey & 0xffffffn;
+        keys.push(truncatedKey);
+    }
+    return keys;
+}
 
 export class MerkleTree {
-    constructor(public readonly buf: bigint[], public readonly depth: number, public readonly hash: (a: bigint, b: bigint) => bigint) {}
+    constructor(
+        public readonly buf: bigint[],
+        public readonly depth: number,
+        public readonly hash: (a: bigint, b: bigint) => bigint
+    ) {}
 
     static fromLeaves(leaves: bigint[], hash: (a: bigint, b: bigint) => bigint) {
         const depth = Math.log2(leaves.length);
@@ -25,8 +41,8 @@ export class MerkleTree {
             buf[leaves.length + i] = leaves[i];
         }
         for (let i = depth - 1; i >= 0; i--) {
-            for (let j = Math.pow(2, i); j < Math.pow(2, i+1); j++) {
-                buf[j] = hash(buf[2*j], buf[2*j+1]);
+            for (let j = Math.pow(2, i); j < Math.pow(2, i + 1); j++) {
+                buf[j] = hash(buf[2 * j], buf[2 * j + 1]);
             }
         }
         return new MerkleTree(buf, depth, hash);
@@ -49,7 +65,7 @@ export class MerkleTree {
     }
 
     proofWithIndices(i: number) {
-        const proof: { index: number, value: bigint }[] = [];
+        const proof: { index: number; value: bigint }[] = [];
         for (let j = 0; j < this.depth; j++) {
             i ^= 1;
             proof.push({ value: this.node(i), index: i });
@@ -59,7 +75,7 @@ export class MerkleTree {
     }
 
     proofForNode(i: number): bigint[] {
-        return this.proofWithIndices(i).map(v => v.value);
+        return this.proofWithIndices(i).map((v) => v.value);
     }
 
     generateUpdate(leaves: bigint[]) {
@@ -68,19 +84,27 @@ export class MerkleTree {
             throw new Error('Cannot fully update the tree');
         }
         const from = totalLeaves - leaves.length;
-        const nodes = leaves.map((l, i) => ({ index: totalLeaves + from + i, value: l, depth: this.depth }));
+        const nodes = leaves.map((l, i) => ({
+            index: totalLeaves + from + i,
+            value: l,
+            depth: this.depth,
+        }));
         let updated = false;
         do {
             if (nodes.length < 2) {
                 break;
             }
             for (let i = 0; i < nodes.length - 1; i++) {
-                if (nodes[i].depth === nodes[i+1].depth && (nodes[i].index ^ nodes[i+1].index) === 1) {
-                    nodes.splice(i, 2, { index: nodes[i].index >> 1, value: this.hash(nodes[i].value, nodes[i+1].value), depth: nodes[i].depth - 1 });
+                if (nodes[i].depth === nodes[i + 1].depth && (nodes[i].index ^ nodes[i + 1].index) === 1) {
+                    nodes.splice(i, 2, {
+                        index: nodes[i].index >> 1,
+                        value: this.hash(nodes[i].value, nodes[i + 1].value),
+                        depth: nodes[i].depth - 1,
+                    });
                 }
             }
         } while (updated);
-        const proof = this.proofWithIndices(totalLeaves + from).filter(p => nodes.findIndex(n => n.index === p.index) === -1);
+        const proof = this.proofWithIndices(totalLeaves + from).filter((p) => nodes.findIndex((n) => n.index === p.index) === -1);
         return {
             nodes,
             proof,
